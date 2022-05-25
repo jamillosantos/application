@@ -3,11 +3,15 @@ module github.com/jamillosantos/application
 go 1.17
 
 require (
+	github.com/DataDog/gostackparse v0.5.0
+	github.com/gofiber/fiber/v2 v2.33.0
 	github.com/golangci/golangci-lint v1.46.2
 	github.com/jamillosantos/config v0.0.0-20220420002431-79b8ffcd6a08
 	github.com/jamillosantos/go-env v0.1.0
-	github.com/jamillosantos/go-services v0.0.0-20220418140302-d7e1f3c3c880
+	github.com/jamillosantos/go-services v0.0.0-20220520222311-d5a1df994c13
 	github.com/jamillosantos/logctx v0.1.0
+	github.com/jamillosantos/server-fiber v0.0.0-20220518004849-11f734d0d209
+	github.com/jamillosantos/services-healthcheck v0.0.0-20220521090028-d9d7ab35bb3c
 	github.com/securego/gosec/v2 v2.11.0
 	github.com/stretchr/testify v1.7.1
 	go.uber.org/zap v1.21.0
@@ -23,6 +27,7 @@ require (
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/OpenPeeDeeP/depguard v1.1.0 // indirect
 	github.com/alexkohler/prealloc v1.0.0 // indirect
+	github.com/andybalholm/brotli v1.0.4 // indirect
 	github.com/ashanbrown/forbidigo v1.3.0 // indirect
 	github.com/ashanbrown/makezero v1.1.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -88,6 +93,7 @@ require (
 	github.com/julz/importas v0.1.0 // indirect
 	github.com/kisielk/errcheck v1.6.0 // indirect
 	github.com/kisielk/gotool v1.0.0 // indirect
+	github.com/klauspost/compress v1.15.4 // indirect
 	github.com/kulti/thelper v0.6.2 // indirect
 	github.com/kunwardeep/paralleltest v1.0.3 // indirect
 	github.com/kyoh86/exportloopref v0.1.8 // indirect
@@ -155,6 +161,9 @@ require (
 	github.com/ultraware/funlen v0.0.3 // indirect
 	github.com/ultraware/whitespace v0.0.5 // indirect
 	github.com/uudashr/gocognit v1.0.5 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/valyala/fasthttp v1.37.0 // indirect
+	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778 // indirect
 	github.com/yagipy/maintidx v1.0.0 // indirect
 	github.com/yeya24/promlinter v0.2.0 // indirect
@@ -164,7 +173,7 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20220414153411-bcd21879b8fd // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3 // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20220422013727-9388b58f7150 // indirect
+	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/tools v0.1.11-0.20220316014157-77aa08bb151a // indirect
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f // indirect
