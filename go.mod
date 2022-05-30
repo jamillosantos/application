@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/DataDog/gostackparse v0.5.0
-	github.com/gofiber/fiber/v2 v2.33.0
+	github.com/gofiber/fiber/v2 v2.34.0
 	github.com/golangci/golangci-lint v1.46.2
 	github.com/jamillosantos/config v0.0.0-20220420002431-79b8ffcd6a08
 	github.com/jamillosantos/go-env v0.1.0
