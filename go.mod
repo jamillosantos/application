@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/DataDog/gostackparse v0.5.0
-	github.com/gofiber/fiber/v2 v2.33.0
+	github.com/gofiber/fiber/v2 v2.36.0
 	github.com/golangci/golangci-lint v1.46.2
 	github.com/jamillosantos/config v0.0.0-20220420002431-79b8ffcd6a08
 	github.com/jamillosantos/go-env v0.1.0
@@ -162,7 +162,7 @@ require (
 	github.com/ultraware/whitespace v0.0.5 // indirect
 	github.com/uudashr/gocognit v1.0.5 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	github.com/valyala/fasthttp v1.37.0 // indirect
+	github.com/valyala/fasthttp v1.38.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778 // indirect
 	github.com/yagipy/maintidx v1.0.0 // indirect
