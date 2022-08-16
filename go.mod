@@ -13,7 +13,7 @@ require (
 	github.com/jamillosantos/server-fiber v0.0.0-20220518004849-11f734d0d209
 	github.com/jamillosantos/services-healthcheck v0.0.0-20220521090028-d9d7ab35bb3c
 	github.com/securego/gosec/v2 v2.12.0
-	github.com/stretchr/testify v1.7.2
+	github.com/stretchr/testify v1.8.0
 	go.uber.org/zap v1.21.0
 )
 
@@ -150,7 +150,7 @@ require (
 	github.com/spf13/viper v1.11.0 // indirect
 	github.com/ssgreg/nlreturn/v2 v2.2.1 // indirect
 	github.com/stbenjam/no-sprintf-host-port v0.1.1 // indirect
-	github.com/stretchr/objx v0.3.0 // indirect
+	github.com/stretchr/objx v0.4.0 // indirect
 	github.com/subosito/gotenv v1.2.0 // indirect
 	github.com/sylvia7788/contextcheck v1.0.5 // indirect
 	github.com/tdakkota/asciicheck v0.1.1 // indirect
