@@ -238,12 +238,10 @@ func (app *Application) Run(serviceName string, setup ServiceSetup) {
 
 // buildSystemServer initializes the server for metrics.
 func (app *Application) buildSystemServer(hc *svchealthcheck.Healthcheck) *srvfiber.FiberServer {
-	return srvfiber.NewFiberServer(&srvfiber.PlatformConfig{
-		BindAddress: ":8082",
-	}, func(app *fiber.App) error {
+	return srvfiber.NewFiberServer(func(app *fiber.App) error {
 		hcfiber.FiberInitialize(hc, app)
 		return nil
-	}).WithName("metrics/health/live")
+	}, srvfiber.WithName("metrics/health/live"), srvfiber.WithBindAddress(":8082"))
 }
 
 // runSystemServer starts the server for metrics, health and ready checks. If the disableSystemServer flag is set,
