@@ -12,7 +12,7 @@ require (
 	github.com/jamillosantos/logctx v0.1.0
 	github.com/jamillosantos/server-fiber v0.0.0-20220813230820-1e23f6c9061e
 	github.com/jamillosantos/services-healthcheck v0.0.0-20220521090028-d9d7ab35bb3c
-	github.com/securego/gosec/v2 v2.12.0
+	github.com/securego/gosec/v2 v2.13.1
 	github.com/stretchr/testify v1.8.0
 	go.uber.org/zap v1.21.0
 )
