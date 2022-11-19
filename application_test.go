@@ -58,12 +58,10 @@ func TestApplication(t *testing.T) {
 			os.Setenv("CONFIG", "./testdata/.config.yaml")
 			os.Setenv("SECRETS", "./testdata/.secrets.yaml")
 
-			app.Run("serviceName",
-				func(ctx context.Context, app *Application) ([]services.Service, error) {
-					h := &httpService{}
-					return []services.Service{h, r}, nil
-				},
-			)
+			app.Run(func(ctx context.Context, app *Application) ([]services.Service, error) {
+				h := &httpService{}
+				return []services.Service{h, r}, nil
+			})
 		}()
 
 		require.Eventually(t, func() bool {
@@ -123,10 +121,9 @@ func TestApplication(t *testing.T) {
 			r := &dummyResource{
 				startDuration: time.Second,
 			}
-			app.Run("serviceName",
-				func(ctx context.Context, app *Application) ([]services.Service, error) {
-					return []services.Service{r}, nil
-				},
+			app.Run(func(ctx context.Context, app *Application) ([]services.Service, error) {
+				return []services.Service{r}, nil
+			},
 			)
 		}()
 
@@ -156,10 +153,9 @@ func TestApplication(t *testing.T) {
 			os.Setenv("CONFIG", "./testdata/.config.yaml")
 			os.Setenv("SECRETS", "./testdata/.secrets.yaml")
 
-			app.Run("serviceName",
-				func(ctx context.Context, app *Application) ([]services.Service, error) {
-					return []services.Service{lgrs}, nil
-				},
+			app.Run(func(ctx context.Context, app *Application) ([]services.Service, error) {
+				return []services.Service{lgrs}, nil
+			},
 			)
 		}()
 
