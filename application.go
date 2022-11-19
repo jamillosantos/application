@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime"
+	"runtime/debug"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -24,11 +25,11 @@ import (
 
 var (
 	// Version is the version of the application. It can be set from using LDFLAGS.
-	Version = "dev"
+	Version = ""
 	// Build is the commit hash originated the build version. It can be set from using LDFLAGS.
-	Build = "local"
+	Build = ""
 	// BuildDate is the timestamp informing when the app was built. It can be set from using LDFLAGS.
-	BuildDate = "unspecified"
+	BuildDate = ""
 )
 
 type appState string
@@ -46,9 +47,11 @@ type Application struct {
 	stateM sync.Mutex
 	state  appState
 
+	name      string
 	version   string
 	build     string
 	buildDate string
+	goVersion string
 
 	loggerZapOptions    []zap.Option
 	disableSystemServer bool
@@ -85,6 +88,13 @@ func (app *Application) WithContext(ctx context.Context) *Application {
 	return app
 }
 
+func (app *Application) WithName(value string) *Application {
+	app.name = value
+	return app
+}
+
+// WithVersion customizes the version of the application.
+// Deprecated: Now the versions are extracted automatically from the go1.18 buildinfo.
 func (app *Application) WithVersion(version, build, buildDate string) *Application {
 	app.version, app.build, app.buildDate = version, build, buildDate
 	return app
@@ -112,7 +122,7 @@ func (app *Application) Shutdown(handler func()) *Application {
 	return app
 }
 
-func (app *Application) Run(serviceName string, setup ServiceSetup) {
+func (app *Application) Run(setup ServiceSetup) {
 	err := func() error {
 		var (
 			logger *zap.Logger
@@ -132,12 +142,17 @@ func (app *Application) Run(serviceName string, setup ServiceSetup) {
 			_, _ = fmt.Fprintln(os.Stderr, "failed initialising logger:", err.Error())
 			return err
 		}
+
+		if bi, ok := debug.ReadBuildInfo(); ok {
+			app.populateFromBuildInfo(bi)
+		}
+
 		logger = logger.With(
-			zap.String("service", serviceName),
+			zap.String("app", app.name),
 			zap.String("version", app.version),
 			zap.String("build", app.build),
 			zap.String("build_date", app.buildDate),
-			zap.String("go_version", runtime.Version()),
+			zap.String("go_version", app.goVersion),
 		)
 
 		ctx, cancelFunc := signal.NotifyContext(app.context, os.Interrupt, syscall.SIGTERM)
@@ -234,6 +249,42 @@ func (app *Application) Run(serviceName string, setup ServiceSetup) {
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+// extractServiceName extracts the service name from the repository path.
+func extractServiceName(path string) string {
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return parts[len(parts)-1]
+}
+
+func (app *Application) populateFromBuildInfo(bi *debug.BuildInfo) {
+	if app.name == "" {
+		app.name = extractServiceName(bi.Main.Path)
+	}
+	app.version = findSettingsIfEmpty(bi, "", app.version, bi.Main.Version, "undefined")
+	app.build = findSettingsIfEmpty(bi, "vcs.revision", app.build, bi.Main.Sum, "undefined")
+	app.buildDate = findSettingsIfEmpty(bi, "vcs.time", app.buildDate, "", "undefined")
+	if bi.GoVersion != "" {
+		app.goVersion = bi.GoVersion
+	}
+}
+
+func findSettingsIfEmpty(bi *debug.BuildInfo, key, value, value2, defaultValue string) string {
+	if value != "" {
+		return value
+	}
+	if value2 != "" {
+		return value2
+	}
+	for _, v := range bi.Settings {
+		if v.Key == key {
+			return v.Value
+		}
+	}
+	return defaultValue
 }
 
 // buildSystemServer initializes the server for metrics.
