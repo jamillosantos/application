@@ -19,6 +19,7 @@ import (
 	svchealthcheck "github.com/jamillosantos/services-healthcheck"
 	"github.com/jamillosantos/services-healthcheck/hcfiber"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/jamillosantos/application/zapreporter"
 )
@@ -137,6 +138,7 @@ func (app *Application) Run(setup ServiceSetup) {
 			zapcfg = zap.NewProductionConfig()
 		}
 		zapcfg.DisableStacktrace = true
+		zapcfg.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
 		logger, err = zapcfg.Build(app.loggerZapOptions...)
 		if err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, "failed initialising logger:", err.Error())
