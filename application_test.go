@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/DataDog/gostackparse"
-	"github.com/jamillosantos/go-services"
+	goservices "github.com/jamillosantos/go-services"
 	svchealthcheck "github.com/jamillosantos/services-healthcheck"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,7 +47,7 @@ func TestApplication_Shutdown(t *testing.T) {
 }
 
 func TestApplication(t *testing.T) {
-	t.Run("should start and stop all services and resources", func(t *testing.T) {
+	t.Run("should start and stop all servers and resources", func(t *testing.T) {
 		ctx, cancelFunc := context.WithCancel(context.Background())
 
 		app := New().WithContext(ctx)
@@ -58,9 +58,9 @@ func TestApplication(t *testing.T) {
 			os.Setenv("CONFIG", "./testdata/.config.yaml")
 			os.Setenv("SECRETS", "./testdata/.secrets.yaml")
 
-			app.Run(func(ctx context.Context, app *Application) ([]services.Service, error) {
+			app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
 				h := &httpService{}
-				return []services.Service{h, r}, nil
+				return []goservices.Service{h, r}, nil
 			})
 		}()
 
@@ -80,7 +80,7 @@ func TestApplication(t *testing.T) {
 			}
 			fmt.Println(string(responseContent))
 			return true
-		}, time.Second*5, time.Second)
+		}, time.Second*2, time.Millisecond*100)
 
 		require.Eventually(t, func() bool {
 			resp, err := http.Get("http://localhost:8082/readyz")
@@ -93,11 +93,11 @@ func TestApplication(t *testing.T) {
 			}
 			fmt.Println(string(responseContent))
 			return true
-		}, time.Second*5, time.Second)
+		}, time.Second*2, time.Millisecond*100)
 
 		assert.True(t, r.started)
 
-		time.Sleep(time.Second * 2)
+		time.Sleep(time.Millisecond * 300)
 
 		cancelFunc()
 
@@ -121,8 +121,8 @@ func TestApplication(t *testing.T) {
 			r := &dummyResource{
 				startDuration: time.Second,
 			}
-			app.Run(func(ctx context.Context, app *Application) ([]services.Service, error) {
-				return []services.Service{r}, nil
+			app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+				return []goservices.Service{r}, nil
 			},
 			)
 		}()
@@ -146,22 +146,18 @@ func TestApplication(t *testing.T) {
 		app := New().WithContext(ctx)
 
 		lgrs := &longToGetReadyService{
-			listenDuration: time.Second * 5,
+			listenDuration: time.Second * 1,
 		}
 
 		go func() {
 			os.Setenv("CONFIG", "./testdata/.config.yaml")
 			os.Setenv("SECRETS", "./testdata/.secrets.yaml")
 
-			app.Run(func(ctx context.Context, app *Application) ([]services.Service, error) {
-				return []services.Service{lgrs}, nil
+			app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+				return []goservices.Service{lgrs}, nil
 			},
 			)
 		}()
-
-		// Ensure the system http endpoint is ok and not ready.
-		require.Eventually(t, appIsNotReady(), time.Second*5, time.Second)
-		require.Eventually(t, appCheckBecomesReady(), time.Second*2, time.Millisecond*500)
 
 		now := time.Now()
 		require.Eventually(t, func() bool {
@@ -176,7 +172,7 @@ func TestApplication(t *testing.T) {
 			}
 			return true
 		}, time.Second*5, time.Millisecond*500)
-		assert.InDelta(t, time.Second*5, time.Since(now), float64(time.Second), "took too long to become ready")
+		assert.InDelta(t, time.Second*1, time.Since(now), float64(time.Second), "took too long to become ready")
 
 		cancelFunc()
 
@@ -247,8 +243,8 @@ func healthCheckBecomesReady() func() bool {
 			logError("failed getting Readyz", err)
 			return false
 		}
-		if len(readyz.Checks) != 1 {
-			logError("jsonResp.checks expected to have len 1. Got", len(readyz.Checks))
+		if len(readyz.Checks) != 2 {
+			logError("jsonResp.checks expected to have len 2. Got", len(readyz.Checks))
 			return false
 		}
 		if readyz.StatusCode != http.StatusOK {
@@ -256,25 +252,6 @@ func healthCheckBecomesReady() func() bool {
 			return false
 		}
 		if readyz.Checks["app"].Error != "" {
-			logError("jsonResp.Checks[\"app\"].Error is", readyz.Checks["app"].Error, ". \"\" expected")
-			return false
-		}
-		return true
-	}
-}
-
-func appCheckBecomesReady() func() bool {
-	return func() bool {
-		readyz, err := getReadyz()
-		if err != nil {
-			logError("failed getting Readyz", err)
-			return false
-		}
-		if len(readyz.Checks) == 0 {
-			logError("jsonResp.checks has no checks")
-			return false
-		}
-		if a, ok := readyz.Checks["app"]; !ok || a.Error == "" {
 			logError("jsonResp.Checks[\"app\"].Error is", readyz.Checks["app"].Error, ". \"\" expected")
 			return false
 		}

@@ -10,10 +10,10 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/gofiber/fiber/v2"
+	fiberv2 "github.com/gofiber/fiber/v2"
 	"github.com/jamillosantos/config"
-	"github.com/jamillosantos/go-env"
-	"github.com/jamillosantos/go-services"
+	goenv "github.com/jamillosantos/go-env"
+	goservices "github.com/jamillosantos/go-services"
 	"github.com/jamillosantos/logctx"
 	srvfiber "github.com/jamillosantos/server-fiber"
 	svchealthcheck "github.com/jamillosantos/services-healthcheck"
@@ -40,7 +40,7 @@ const (
 )
 
 // ServiceSetup is the handler that is pased to the Application.Run receiver.
-type ServiceSetup func(ctx context.Context, app *Application) ([]services.Service, error)
+type ServiceSetup func(ctx context.Context, app *Application) ([]goservices.Service, error)
 
 type Application struct {
 	context context.Context
@@ -60,7 +60,7 @@ type Application struct {
 	environment string
 
 	ConfigManager *config.Manager
-	Runner        *services.Runner
+	Runner        *goservices.Runner
 
 	shutdownHandlerMutex sync.Mutex
 	shutdownHandler      []func()
@@ -74,7 +74,7 @@ func defaultApplication() *Application {
 		build:     Build,
 		buildDate: BuildDate,
 
-		environment: env.GetStringDefault("ENV", "production"),
+		environment: goenv.GetStringDefault("ENV", "production"),
 
 		shutdownHandler: []func(){},
 	}
@@ -124,133 +124,128 @@ func (app *Application) Shutdown(handler func()) *Application {
 }
 
 func (app *Application) Run(setup ServiceSetup) {
-	err := func() error {
-		var (
-			logger *zap.Logger
-			err    error
-		)
-
-		var zapcfg zap.Config
-		switch app.environment {
-		case "dev":
-			zapcfg = zap.NewDevelopmentConfig()
-		default:
-			zapcfg = zap.NewProductionConfig()
-		}
-		zapcfg.DisableStacktrace = true
-		zapcfg.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
-		logger, err = zapcfg.Build(app.loggerZapOptions...)
-		if err != nil {
-			_, _ = fmt.Fprintln(os.Stderr, "failed initialising logger:", err.Error())
-			return err
-		}
-
-		if bi, ok := debug.ReadBuildInfo(); ok {
-			app.populateFromBuildInfo(bi)
-		}
-
-		logger = logger.With(
-			zap.String("app", app.name),
-			zap.String("version", app.version),
-			zap.String("build", app.build),
-			zap.String("build_date", app.buildDate),
-			zap.String("go_version", app.goVersion),
-		)
-
-		ctx, cancelFunc := signal.NotifyContext(app.context, os.Interrupt, syscall.SIGTERM)
-		defer cancelFunc()
-
-		ctx = logctx.WithLogger(ctx, logger)
-
-		// Initializes the default logger instance
-		err = logctx.Initialize(logctx.WithDefaultLogger(logger))
-		if err != nil {
-			return err
-		}
-
-		hc := svchealthcheck.NewHealthcheck(
-			svchealthcheck.WithReadyCheck("app", &appChecker{app}),
-		)
-		hcObserver := newHealthchekcObserver(hc)
-
-		app.Runner = services.NewRunner(
-			services.WithReporter(zapreporter.New(logger)),
-			services.WithObserver(hcObserver),
-		)
-		defer func() {
-			r := recover()
-			if r != nil {
-				logger.Error("application panic: ", zap.Any("panic", r), zap.StackSkip("stack", 1))
-			}
-
-			err := app.Runner.Finish(ctx)
-			if err != nil {
-				logger.Error("error stopping the services", zap.Error(err))
-			}
-
-			_ = logger.Sync()
-		}()
-
-		if err := app.runSystemServer(ctx, hc); err != nil {
-			logger.Error("failed to start system server", zap.Error(err))
-			return err
-		}
-
-		// Initializes and load the plain configuration
-		plainConfigLoader := config.NewFileLoader(env.GetStringDefault("CONFIG", ".config.yaml"))
-		plainEngine := config.NewYAMLEngine(plainConfigLoader)
-		err = plainEngine.Load()
-		if err != nil {
-			logger.Error("could not initialize the plain engine", zap.Error(err))
-			return err
-		}
-
-		// Initializes tand load the secret configuration
-		secretConfigLoader := config.NewFileLoader(env.GetStringDefault("SECRETS", ".secrets.yaml"))
-		secretEngine := config.NewYAMLEngine(secretConfigLoader)
-		err = secretEngine.Load()
-		if err != nil {
-			logger.Error("could not initialize the secret engine", zap.Error(err))
-			return err
-		}
-
-		configManager := config.NewManager()
-		configManager.AddPlainEngine(plainEngine)
-		configManager.AddSecretEngine(secretEngine)
-
-		// Publish the config manager to be used into the setup callback
-		app.ConfigManager = configManager
-
-		svcs, err := setup(ctx, app)
-		if err != nil {
-			logger.Error("failed setting the service up", zap.Error(err))
-			return err
-		}
-
-		// If nothing needs to be started, the listener is done.
-		if len(svcs) == 0 {
-			return nil
-		}
-
-		err = app.Runner.Run(ctx, svcs...)
-		if err != nil {
-			logger.Error("failed running service", zap.Error(err))
-			return err
-		}
-
-		app.stateM.Lock()
-		app.state = stateRunning
-		app.stateM.Unlock()
-
-		app.Runner.Wait(ctx)
-
-		// TODO Remove the defer Wait from the go-services
-
-		return nil
-	}()
+	err := app.run(setup)
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+func (app *Application) run(setup ServiceSetup) error {
+	var (
+		logger *zap.Logger
+		err    error
+	)
+
+	var zapcfg zap.Config
+	switch app.environment {
+	case "dev":
+		zapcfg = zap.NewDevelopmentConfig()
+	default:
+		zapcfg = zap.NewProductionConfig()
+	}
+	zapcfg.DisableStacktrace = true
+	zapcfg.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
+	logger, err = zapcfg.Build(app.loggerZapOptions...)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "failed initialising logger:", err.Error())
+		return err
+	}
+
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		app.populateFromBuildInfo(bi)
+	}
+
+	logger = logger.With(
+		zap.String("app", app.name),
+		zap.String("version", app.version),
+		zap.String("build", app.build),
+		zap.String("build_date", app.buildDate),
+		zap.String("go_version", app.goVersion),
+	)
+
+	ctx, cancelFunc := signal.NotifyContext(app.context, os.Interrupt, syscall.SIGTERM)
+	defer cancelFunc()
+
+	ctx = logctx.WithLogger(ctx, logger)
+
+	// Initializes the default logger instance
+	err = logctx.Initialize(logctx.WithDefaultLogger(logger))
+	if err != nil {
+		return err
+	}
+
+	hc := svchealthcheck.NewHealthcheck(
+		svchealthcheck.WithReadyCheck("app", &appChecker{app}),
+	)
+	hcObserver := newHealthchekcObserver(hc)
+
+	app.Runner = goservices.NewRunner(
+		goservices.WithReporter(zapreporter.New(logger)),
+		goservices.WithObserver(hcObserver),
+	)
+	defer func() {
+		r := recover()
+		if r != nil {
+			logger.Error("application panic: ", zap.Any("panic", r), zap.StackSkip("stack", 1))
+		}
+
+		err := app.Runner.Finish(ctx)
+		if err != nil {
+			logger.Error("error stopping the services", zap.Error(err))
+		}
+
+		_ = logger.Sync()
+	}()
+
+	if err := app.runSystemServer(ctx, hc); err != nil {
+		logger.Error("failed to start system server", zap.Error(err))
+		return err
+	}
+
+	// Initializes and load the plain configuration
+	plainConfigLoader := config.NewFileLoader(goenv.GetStringDefault("CONFIG", ".config.yaml"))
+	plainEngine := config.NewYAMLEngine(plainConfigLoader)
+	err = plainEngine.Load()
+	if err != nil {
+		logger.Error("could not initialize the plain engine", zap.Error(err))
+		return err
+	}
+
+	// Initializes tand load the secret configuration
+	secretConfigLoader := config.NewFileLoader(goenv.GetStringDefault("SECRETS", ".secrets.yaml"))
+	secretEngine := config.NewYAMLEngine(secretConfigLoader)
+	err = secretEngine.Load()
+	if err != nil {
+		logger.Error("could not initialize the secret engine", zap.Error(err))
+		return err
+	}
+
+	configManager := config.NewManager()
+	configManager.AddPlainEngine(plainEngine)
+	configManager.AddSecretEngine(secretEngine)
+
+	// Publish the config manager to be used into the setup callback
+	app.ConfigManager = configManager
+
+	svcs, err := setup(ctx, app)
+	if err != nil {
+		logger.Error("failed setting the service up", zap.Error(err))
+		return err
+	}
+
+	err = app.Runner.Run(ctx, svcs...)
+	if err != nil {
+		logger.Error("failed running service", zap.Error(err))
+		return err
+	}
+
+	app.stateM.Lock()
+	app.state = stateRunning
+	app.stateM.Unlock()
+
+	<-ctx.Done()
+
+	return nil
 }
 
 // extractServiceName extracts the service name from the repository path.
@@ -291,7 +286,7 @@ func findSettingsIfEmpty(bi *debug.BuildInfo, key, value, value2, defaultValue s
 
 // buildSystemServer initializes the server for metrics.
 func (app *Application) buildSystemServer(hc *svchealthcheck.Healthcheck) *srvfiber.FiberServer {
-	return srvfiber.NewFiberServer(func(app *fiber.App) error {
+	return srvfiber.NewFiberServer(func(app *fiberv2.App) error {
 		hcfiber.FiberInitialize(hc, app)
 		return nil
 	}, srvfiber.WithName("metrics/health/live"), srvfiber.WithBindAddress(":8082"))
