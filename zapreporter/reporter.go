@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	services "github.com/jamillosantos/go-services"
+	goservices "github.com/jamillosantos/go-services"
 	"github.com/jamillosantos/logctx"
 	"go.uber.org/zap"
 )
@@ -22,13 +22,13 @@ func New(logger *zap.Logger) *ZapReporter {
 	return &ZapReporter{logger}
 }
 
-func (reporter *ZapReporter) BeforeStart(ctx context.Context, service services.Service) {
+func (reporter *ZapReporter) BeforeStart(ctx context.Context, service goservices.Service) {
 	reporter.logger.
 		With(zap.String(loggingFieldDependencyService, service.Name())).
 		Info("starting service")
 }
 
-func (reporter *ZapReporter) AfterStart(ctx context.Context, service services.Service, err error) {
+func (reporter *ZapReporter) AfterStart(ctx context.Context, service goservices.Service, err error) {
 	logger := reporter.logger.With(zap.String(loggingFieldDependencyService, service.Name()))
 	if err != nil {
 		logger.Error("failed starting service", zap.Error(err))
@@ -37,13 +37,13 @@ func (reporter *ZapReporter) AfterStart(ctx context.Context, service services.Se
 	logger.Info("service started")
 }
 
-func (reporter *ZapReporter) BeforeStop(ctx context.Context, service services.Service) {
+func (reporter *ZapReporter) BeforeStop(ctx context.Context, service goservices.Service) {
 	reporter.logger.
 		With(zap.String(loggingFieldDependencyService, service.Name())).
 		Info("stopping service")
 }
 
-func (reporter *ZapReporter) AfterStop(ctx context.Context, service services.Service, err error) {
+func (reporter *ZapReporter) AfterStop(ctx context.Context, service goservices.Service, err error) {
 	logger := reporter.logger.With(zap.String(loggingFieldDependencyService, service.Name()))
 	if err != nil {
 		logger.Error("failed stopping service", zap.Error(err))
@@ -52,11 +52,11 @@ func (reporter *ZapReporter) AfterStop(ctx context.Context, service services.Ser
 	logger.Info("service stopped")
 }
 
-func (reporter *ZapReporter) BeforeLoad(ctx context.Context, configurable services.Configurable) {
+func (reporter *ZapReporter) BeforeLoad(ctx context.Context, configurable goservices.Configurable) {
 	// TODO
 }
 
-func (reporter *ZapReporter) AfterLoad(ctx context.Context, configurable services.Configurable, err error) {
+func (reporter *ZapReporter) AfterLoad(ctx context.Context, configurable goservices.Configurable, err error) {
 	// TODO
 }
 
@@ -65,7 +65,7 @@ func (reporter *ZapReporter) SignalReceived(signal os.Signal) {
 		Info("signal received", zap.String(loggingFieldOSSignal, signal.String()))
 }
 
-func (reporter *ZapReporter) BeforeRetry(ctx context.Context, service services.Service, i int) {
+func (reporter *ZapReporter) BeforeRetry(ctx context.Context, service goservices.Service, i int) {
 	reporter.logger.
 		With(zap.String(loggingFieldDependencyService, service.Name())).
 		Info("retrying service")

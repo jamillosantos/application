@@ -9,7 +9,8 @@ import (
 )
 
 type httpService struct {
-	s *http.Server
+	s           *http.Server
+	closingWait sync.WaitGroup
 }
 
 func (h *httpService) Name() string {
@@ -23,15 +24,21 @@ func (h *httpService) Listen(ctx context.Context) error {
 		}),
 		Addr: ":8080",
 	}
-	return h.s.ListenAndServe()
+	defer h.closingWait.Add(1)
+	go func() {
+		defer h.closingWait.Done()
+		_ = h.s.ListenAndServe()
+	}()
+	return nil
 }
 
 func (h *httpService) Close(ctx context.Context) error {
-	return h.s.Close()
+	_ = h.s.Close()
+	h.closingWait.Wait()
+	return nil
 }
 
 type longToGetReadyService struct {
-	cancelFunc     context.CancelFunc
 	listenDuration time.Duration
 	ready          bool
 	readyM         sync.Mutex
@@ -41,24 +48,19 @@ func (s *longToGetReadyService) Name() string {
 	return "Long to get Ready"
 }
 
-func (s *longToGetReadyService) Listen(ctx context.Context) error {
-	c, cancelFunc := context.WithCancel(ctx)
-	defer cancelFunc()
-	s.cancelFunc = cancelFunc
+func (s *longToGetReadyService) Listen(_ context.Context) error {
 	time.Sleep(s.listenDuration)
 	s.readyM.Lock()
 	s.ready = true
 	s.readyM.Unlock()
-	<-c.Done()
 	return nil
 }
 
-func (h *longToGetReadyService) Close(ctx context.Context) error {
-	h.cancelFunc()
+func (h *longToGetReadyService) Close(_ context.Context) error {
 	return nil
 }
 
-func (s *longToGetReadyService) IsReady(ctx context.Context) error {
+func (s *longToGetReadyService) IsReady(_ context.Context) error {
 	s.readyM.Lock()
 	if s.ready {
 		s.readyM.Unlock()
