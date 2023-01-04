@@ -59,6 +59,7 @@ type Application struct {
 
 	environment string
 
+	skipConfig    bool
 	ConfigManager *config.Manager
 	Runner        *goservices.Runner
 
@@ -113,6 +114,12 @@ func (app *Application) WithEnvironment(environment string) *Application {
 
 func (app *Application) WithDisableSystemServer(disable bool) *Application {
 	app.disableSystemServer = disable
+	return app
+}
+
+// WithSkipConfig skips the configuration loading when this instance runs.
+func (app *Application) WithSkipConfig(skip bool) *Application {
+	app.skipConfig = skip
 	return app
 }
 
@@ -202,30 +209,33 @@ func (app *Application) run(setup ServiceSetup) error {
 		return err
 	}
 
-	// Initializes and load the plain configuration
-	plainConfigLoader := config.NewFileLoader(goenv.GetStringDefault("CONFIG", ".config.yaml"))
-	plainEngine := config.NewYAMLEngine(plainConfigLoader)
-	err = plainEngine.Load()
-	if err != nil {
-		logger.Error("could not initialize the plain engine", zap.Error(err))
-		return err
+	if app.skipConfig {
+		// Initializes and load the plain configuration
+		plainConfigLoader := config.NewFileLoader(goenv.GetStringDefault("CONFIG", ".config.yaml"))
+		plainEngine := config.NewYAMLEngine(plainConfigLoader)
+		err = plainEngine.Load()
+		if err != nil {
+			logger.Error("could not initialize the plain engine", zap.Error(err))
+			return err
+		}
+
+		// Initializes tand load the secret configuration
+		secretConfigLoader := config.NewFileLoader(goenv.GetStringDefault("SECRETS", ".secrets.yaml"))
+		secretEngine := config.NewYAMLEngine(secretConfigLoader)
+		err = secretEngine.Load()
+		if err != nil {
+			logger.Error("could not initialize the secret engine", zap.Error(err))
+			return err
+		}
+
+		configManager := config.NewManager()
+		configManager.AddPlainEngine(plainEngine)
+		configManager.AddSecretEngine(secretEngine)
+
+		// Publish the config manager to be used into the setup callback
+		app.ConfigManager = configManager
+
 	}
-
-	// Initializes tand load the secret configuration
-	secretConfigLoader := config.NewFileLoader(goenv.GetStringDefault("SECRETS", ".secrets.yaml"))
-	secretEngine := config.NewYAMLEngine(secretConfigLoader)
-	err = secretEngine.Load()
-	if err != nil {
-		logger.Error("could not initialize the secret engine", zap.Error(err))
-		return err
-	}
-
-	configManager := config.NewManager()
-	configManager.AddPlainEngine(plainEngine)
-	configManager.AddSecretEngine(secretEngine)
-
-	// Publish the config manager to be used into the setup callback
-	app.ConfigManager = configManager
 
 	svcs, err := setup(ctx, app)
 	if err != nil {
