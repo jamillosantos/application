@@ -209,7 +209,7 @@ func (app *Application) run(setup ServiceSetup) error {
 		return err
 	}
 
-	if app.skipConfig {
+	if !app.skipConfig {
 		// Initializes and load the plain configuration
 		plainConfigLoader := config.NewFileLoader(goenv.GetStringDefault("CONFIG", ".config.yaml"))
 		plainEngine := config.NewYAMLEngine(plainConfigLoader)
