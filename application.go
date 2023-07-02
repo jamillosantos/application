@@ -65,6 +65,7 @@ type Application struct {
 
 	shutdownHandlerMutex sync.Mutex
 	shutdownHandler      []func()
+	zapConfigModifier    func(*zap.Config)
 }
 
 func defaultApplication() *Application {
@@ -104,6 +105,11 @@ func (app *Application) WithVersion(version, build, buildDate string) *Applicati
 
 func (app *Application) WithLoggerZapOptions(options ...zap.Option) *Application {
 	app.loggerZapOptions = options
+	return app
+}
+
+func (app *Application) WithZapConfigModifier(f func(*zap.Config)) *Application {
+	app.zapConfigModifier = f
 	return app
 }
 
@@ -149,6 +155,9 @@ func (app *Application) run(setup ServiceSetup) error {
 		zapcfg = zap.NewDevelopmentConfig()
 	default:
 		zapcfg = zap.NewProductionConfig()
+	}
+	if app.zapConfigModifier != nil {
+		app.zapConfigModifier(&zapcfg)
 	}
 	zapcfg.DisableStacktrace = true
 	zapcfg.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
