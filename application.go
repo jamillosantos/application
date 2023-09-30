@@ -252,6 +252,11 @@ func (app *Application) run(setup ServiceSetup) error {
 		return err
 	}
 
+	// No need to run the services if there is no service to run.
+	if len(svcs) == 0 {
+		return nil
+	}
+
 	err = app.Runner.Run(ctx, svcs...)
 	if err != nil {
 		logger.Error("failed running service", zap.Error(err))
