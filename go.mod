@@ -3,7 +3,7 @@ module github.com/jamillosantos/application
 go 1.19
 
 require (
-	github.com/DataDog/gostackparse v0.5.0
+	github.com/DataDog/gostackparse v0.7.0
 	github.com/gofiber/fiber/v2 v2.52.0
 	github.com/golangci/golangci-lint v1.55.2
 	github.com/jamillosantos/config v0.0.0-20231116000047-6982b9f2d049
