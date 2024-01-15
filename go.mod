@@ -6,7 +6,7 @@ require (
 	github.com/DataDog/gostackparse v0.7.0
 	github.com/gofiber/fiber/v2 v2.52.0
 	github.com/golangci/golangci-lint v1.55.2
-	github.com/jamillosantos/config v0.0.0-20231116000047-6982b9f2d049
+	github.com/jamillosantos/config v0.1.0
 	github.com/jamillosantos/go-env v0.1.0
 	github.com/jamillosantos/go-services v0.0.0-20221231015325-b7cf387fabf3
 	github.com/jamillosantos/logctx v0.2.0

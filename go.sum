@@ -510,9 +510,8 @@ github.com/imdario/mergo v0.3.8/go.mod h1:2EnlNZ0deacrJVfApfmtdGgDfMuh/nq6Ok1EcJ
 github.com/inconshreveable/mousetrap v1.0.0/go.mod h1:PxqpIevigyE2G7u3NXJIT2ANytuPF1OarO4DADm73n8=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
-github.com/inhies/go-bytesize v0.0.0-20220417184213-4913239db9cf h1:FtEj8sfIcaaBfAKrE1Cwb61YDtYq9JxChK1c7AKce7s=
-github.com/jamillosantos/config v0.0.0-20231116000047-6982b9f2d049 h1:JKaKQY/yJ1Xo08HkVGU4qnR165eTBJIYwrLvG5/+G1Y=
-github.com/jamillosantos/config v0.0.0-20231116000047-6982b9f2d049/go.mod h1:TMvNOfj097zyxiNgZ7dTcyHolNqxzyoaFWWvJ2ZylHg=
+github.com/jamillosantos/config v0.1.0 h1:dIj7E5swGIMBMNs/+fgzSUGnyel6Vdt/JtGNycg4cR0=
+github.com/jamillosantos/config v0.1.0/go.mod h1:JyXUHHUfik8vTdG+tCCXkltrs/ctZij4JNoxnIv3uNs=
 github.com/jamillosantos/go-env v0.1.0 h1:2VkBDjdiJFBqrW5RhDKN2l16fGHwGM1G84BkwW69vk8=
 github.com/jamillosantos/go-env v0.1.0/go.mod h1:3VrUqCVLbbsuvCvUOx8Pe7E+YEcGB+jVo6+YxTkmRP0=
 github.com/jamillosantos/go-os-signals v0.2.0 h1:BY3kaZrUvj0nbfy7HIK2npID8uD2fDuZu184cMmQBXg=
