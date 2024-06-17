@@ -12,7 +12,7 @@ require (
 	github.com/jamillosantos/logctx v0.2.0
 	github.com/jamillosantos/server-fiber v0.0.0-20230825004328-8092f26046e8
 	github.com/jamillosantos/services-healthcheck v0.0.0-20221103012728-b82e2da207d0
-	github.com/securego/gosec/v2 v2.19.0
+	github.com/securego/gosec/v2 v2.20.0
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.26.0
 )
@@ -189,11 +189,11 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc // indirect
 	golang.org/x/exp/typeparams v0.0.0-20240314144324-c7f7c6466f7f // indirect
-	golang.org/x/mod v0.16.0 // indirect
-	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/tools v0.19.0 // indirect
+	golang.org/x/mod v0.17.0 // indirect
+	golang.org/x/sync v0.7.0 // indirect
+	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
+	golang.org/x/tools v0.21.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
