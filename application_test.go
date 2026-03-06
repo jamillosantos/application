@@ -112,12 +112,11 @@ func TestApplication(t *testing.T) {
 	t.Run("should not be ready until the Run function finishes", func(t *testing.T) {
 		ctx, cancelFunc := context.WithCancel(context.Background())
 
+		os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
+
 		app := New().WithContext(ctx)
 
 		go func() {
-			os.Setenv("CONFIG", "./testdata/.config.yaml")
-			os.Setenv("SECRETS", "./testdata/.secrets.yaml")
-
 			r := &dummyResource{
 				startDuration: time.Second,
 			}
@@ -143,6 +142,8 @@ func TestApplication(t *testing.T) {
 	t.Run("should be ready only when all readable services are ready", func(t *testing.T) {
 		ctx, cancelFunc := context.WithCancel(context.Background())
 
+		os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
+
 		app := New().WithContext(ctx)
 
 		lgrs := &longToGetReadyService{
@@ -150,9 +151,6 @@ func TestApplication(t *testing.T) {
 		}
 
 		go func() {
-			os.Setenv("CONFIG", "./testdata/.config.yaml")
-			os.Setenv("SECRETS", "./testdata/.secrets.yaml")
-
 			app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
 				return []goservices.Service{lgrs}, nil
 			},
