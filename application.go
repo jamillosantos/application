@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	fiberv2 "github.com/gofiber/fiber/v2"
 	"github.com/jamillosantos/config"
@@ -65,6 +66,7 @@ type Application struct {
 
 	shutdownHandlerMutex       sync.Mutex
 	shutdownHandler            []func()
+	shutdownGracePeriod        time.Duration
 	zapConfigModifier          func(*zap.Config)
 	configManagerConfigOptions []config.Option
 	systemServerInitialize     func(*fiberv2.App) error
@@ -73,19 +75,27 @@ type Application struct {
 
 func defaultApplication() *Application {
 	return &Application{
-		context: context.Background(),
-
-		version:   Version,
-		build:     Build,
-		buildDate: BuildDate,
-
+		context:                    context.Background(),
+		stateM:                     sync.Mutex{},
+		state:                      "",
+		name:                       "",
+		version:                    Version,
+		build:                      Build,
+		buildDate:                  BuildDate,
+		goVersion:                  "",
+		loggerZapOptions:           nil,
+		disableSystemServer:        false,
+		environment:                goenv.GetStringDefault("ENV", "production"),
+		skipConfig:                 false,
+		ConfigManager:              nil,
+		Runner:                     nil,
+		shutdownHandlerMutex:       sync.Mutex{},
+		shutdownHandler:            []func(){},
+		shutdownGracePeriod:        30 * time.Second,
+		zapConfigModifier:          nil,
 		configManagerConfigOptions: []config.Option{},
-
-		environment: goenv.GetStringDefault("ENV", "production"),
-
-		systemServerBindAddress: ":8082",
-
-		shutdownHandler: []func(){},
+		systemServerInitialize:     nil,
+		systemServerBindAddress:    ":8082",
 	}
 }
 
@@ -150,6 +160,13 @@ func (app *Application) Shutdown(handler func()) *Application {
 	app.shutdownHandlerMutex.Lock()
 	app.shutdownHandler = append(app.shutdownHandler, handler)
 	app.shutdownHandlerMutex.Unlock()
+	return app
+}
+
+// WithShutdownGracePeriod sets the maximum time to wait for shutdown handlers to complete.
+// If the grace period elapses before all handlers finish, the application stops waiting and exits.
+func (app *Application) WithShutdownGracePeriod(d time.Duration) *Application {
+	app.shutdownGracePeriod = d
 	return app
 }
 
@@ -222,17 +239,46 @@ func (app *Application) run(setup ServiceSetup) error {
 			logger.Error("application panic: ", zap.Any("panic", r), zap.StackSkip("stack", 1))
 		}
 
-		err := app.Runner.Finish(ctx)
-		if err != nil {
-			logger.Error("error stopping the services", zap.Error(err))
+		shutdownCtx := context.Background()
+		shutdownCancel := context.CancelFunc(func() {})
+		if app.shutdownGracePeriod > 0 {
+			shutdownCtx, shutdownCancel = context.WithTimeout(context.Background(), app.shutdownGracePeriod)
 		}
+		defer shutdownCancel()
 
 		app.shutdownHandlerMutex.Lock()
 		handlers := make([]func(), len(app.shutdownHandler))
 		copy(handlers, app.shutdownHandler)
 		app.shutdownHandlerMutex.Unlock()
-		for _, h := range handlers {
-			h()
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+
+			if err := app.Runner.Finish(shutdownCtx); err != nil {
+				logger.Error("error stopping the services", zap.Error(err))
+			}
+			select {
+			case <-shutdownCtx.Done():
+				return
+			default:
+			}
+
+			for _, h := range handlers {
+				h()
+
+				select {
+				case <-shutdownCtx.Done():
+					return
+				default:
+				}
+			}
+		}()
+
+		select {
+		case <-done:
+		case <-shutdownCtx.Done():
+			logger.Warn("shutdown grace period exceeded, forcing exit")
 		}
 
 		_ = logger.Sync()
