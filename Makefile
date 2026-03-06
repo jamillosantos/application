@@ -8,7 +8,7 @@ lint:
 	go tool golangci-lint run
 
 .PHONY: test
-test: lint
+test:
 	go tool ginkgo ./...
 
 .PHONY: all

@@ -31,7 +31,9 @@ jobs:
         run: |
           go mod download
 
-      - uses: setare/go-lint-action@v0.1.2
+      - name: Lint
+        run: |
+          make lint
 
   unit-tests:
     name: Unit tests
@@ -46,19 +48,10 @@ jobs:
       - name: Check out code into the Go module directory
         uses: actions/checkout@v3
 
-      - uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-
       - name: Get dependencies
         run: |
           go mod download
 
       - name: Unit tests
         run: |
-          go test -covermode=atomic -coverprofile=coverage.out
+          make test
