@@ -89,10 +89,13 @@ func (r *dummyResource) Start(_ context.Context) error {
 	return nil
 }
 
-func (r *dummyResource) Stop(_ context.Context) error {
+func (r *dummyResource) Stop(ctx context.Context) error {
 	r.started = false
 	if r.stopDuration > 0 {
-		time.Sleep(r.stopDuration)
+		select {
+		case <-time.After(r.stopDuration):
+		case <-ctx.Done():
+		}
 	}
 	return nil
 }
