@@ -73,13 +73,15 @@ func (s *longToGetReadyService) IsReady(_ context.Context) error {
 type dummyResource struct {
 	startDuration time.Duration
 	started       bool
+
+	stopDuration time.Duration
 }
 
 func (r *dummyResource) Name() string {
 	return "http"
 }
 
-func (r *dummyResource) Start(ctx context.Context) error {
+func (r *dummyResource) Start(_ context.Context) error {
 	r.started = true
 	if r.startDuration > 0 {
 		time.Sleep(r.startDuration)
@@ -87,7 +89,10 @@ func (r *dummyResource) Start(ctx context.Context) error {
 	return nil
 }
 
-func (r *dummyResource) Stop(ctx context.Context) error {
+func (r *dummyResource) Stop(_ context.Context) error {
 	r.started = false
+	if r.stopDuration > 0 {
+		time.Sleep(r.stopDuration)
+	}
 	return nil
 }

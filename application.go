@@ -63,9 +63,12 @@ type Application struct {
 	ConfigManager *config.Manager
 	Runner        *goservices.Runner
 
-	shutdownHandlerMutex sync.Mutex
-	shutdownHandler      []func()
-	zapConfigModifier    func(*zap.Config)
+	shutdownHandlerMutex       sync.Mutex
+	shutdownHandler            []func()
+	zapConfigModifier          func(*zap.Config)
+	configManagerConfigOptions []config.Option
+	systemServerInitialize     func(*fiberv2.App) error
+	systemServerBindAddress    string
 }
 
 func defaultApplication() *Application {
@@ -76,7 +79,11 @@ func defaultApplication() *Application {
 		build:     Build,
 		buildDate: BuildDate,
 
+		configManagerConfigOptions: []config.Option{},
+
 		environment: goenv.GetStringDefault("ENV", "production"),
+
+		systemServerBindAddress: ":8082",
 
 		shutdownHandler: []func(){},
 	}
@@ -93,6 +100,16 @@ func (app *Application) WithContext(ctx context.Context) *Application {
 
 func (app *Application) WithName(value string) *Application {
 	app.name = value
+	return app
+}
+
+func (app *Application) WithConfigManagerOptions(options ...config.Option) *Application {
+	app.configManagerConfigOptions = append(app.configManagerConfigOptions, options...)
+	return app
+}
+
+func (app *Application) WithSystemServerBindAddress(value string) *Application {
+	app.systemServerBindAddress = value
 	return app
 }
 
@@ -210,6 +227,14 @@ func (app *Application) run(setup ServiceSetup) error {
 			logger.Error("error stopping the services", zap.Error(err))
 		}
 
+		app.shutdownHandlerMutex.Lock()
+		handlers := make([]func(), len(app.shutdownHandler))
+		copy(handlers, app.shutdownHandler)
+		app.shutdownHandlerMutex.Unlock()
+		for _, h := range handlers {
+			h()
+		}
+
 		_ = logger.Sync()
 	}()
 
@@ -219,31 +244,9 @@ func (app *Application) run(setup ServiceSetup) error {
 	}
 
 	if !app.skipConfig {
-		// Initializes and load the plain configuration
-		plainConfigLoader := config.NewFileLoader(goenv.GetStringDefault("CONFIG", ".config.yaml"))
-		plainEngine := config.NewYAMLEngine(plainConfigLoader)
-		err = plainEngine.Load()
-		if err != nil {
-			logger.Error("could not initialize the plain engine", zap.Error(err))
-			return err
-		}
-
-		// Initializes tand load the secret configuration
-		secretConfigLoader := config.NewFileLoader(goenv.GetStringDefault("SECRETS", ".secrets.yaml"))
-		secretEngine := config.NewYAMLEngine(secretConfigLoader)
-		err = secretEngine.Load()
-		if err != nil {
-			logger.Error("could not initialize the secret engine", zap.Error(err))
-			return err
-		}
-
-		configManager := config.NewManager()
-		configManager.AddPlainEngine(plainEngine)
-		configManager.AddSecretEngine(secretEngine)
-
-		// Publish the config manager to be used into the setup callback
-		app.ConfigManager = configManager
-
+		app.ConfigManager = config.NewManager(
+			app.configManagerConfigOptions...,
+		)
 	}
 
 	svcs, err := setup(ctx, app)
@@ -310,10 +313,15 @@ func findSettingsIfEmpty(bi *debug.BuildInfo, key, value, value2, defaultValue s
 
 // buildSystemServer initializes the server for metrics.
 func (app *Application) buildSystemServer(hc *svchealthcheck.Healthcheck) *srvfiber.FiberServer {
-	return srvfiber.NewFiberServer(func(app *fiberv2.App) error {
-		hcfiber.FiberInitialize(hc, app)
+	return srvfiber.NewFiberServer(func(fiberApp *fiberv2.App) error {
+		hcfiber.FiberInitialize(hc, fiberApp)
+
+		if app.systemServerInitialize != nil {
+			return app.systemServerInitialize(fiberApp)
+		}
+
 		return nil
-	}, srvfiber.WithName("metrics/health/live"), srvfiber.WithBindAddress(":8082"))
+	}, srvfiber.WithName("metrics/health/live"), srvfiber.WithBindAddress(app.systemServerBindAddress))
 }
 
 // runSystemServer starts the server for metrics, health and ready checks. If the disableSystemServer flag is set,

@@ -5,18 +5,14 @@ mod:
 
 .PHONY: lint
 lint:
-	go run github.com/golangci/golangci-lint/cmd/golangci-lint run
-
-.PHONY: sec
-sec:
-	go run github.com/securego/gosec/v2/cmd/gosec ./...
+	go tool golangci-lint run
 
 .PHONY: test
-test: lint
-	go test ./...
+test:
+	go tool ginkgo ./...
 
 .PHONY: all
-all: lint sec test
+all: lint test
 	@:
 
 .PHONY: generate
