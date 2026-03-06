@@ -10,187 +10,284 @@ import (
 	"os"
 	"path"
 	"runtime/debug"
-	"testing"
 	"time"
 
 	"github.com/DataDog/gostackparse"
 	goservices "github.com/jamillosantos/go-services"
 	svchealthcheck "github.com/jamillosantos/services-healthcheck"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func TestApplication_WithContext(t *testing.T) {
-	wantContext := context.Background()
-	app := (&Application{}).WithContext(wantContext)
-	assert.Equal(t, wantContext, app.context)
-}
+var _ = Describe("Application", func() {
+	Describe("WithContext", func() {
+		It("should set the context", func() {
+			wantContext := context.Background()
+			app := (&Application{}).WithContext(wantContext)
+			Expect(app.context).To(Equal(wantContext))
+		})
+	})
 
-func TestApplication_WithVersion(t *testing.T) {
-	wantVersion, wantBuild, wantBuildDate := "version", "build", "build_date"
-	app := (&Application{}).WithVersion(wantVersion, wantBuild, wantBuildDate)
-	assert.Equal(t, wantVersion, app.version)
-	assert.Equal(t, wantBuild, app.build)
-	assert.Equal(t, wantBuildDate, app.buildDate)
-}
+	Describe("WithVersion", func() {
+		It("should set the version, build and buildDate", func() {
+			wantVersion, wantBuild, wantBuildDate := "version", "build", "build_date"
+			app := (&Application{}).WithVersion(wantVersion, wantBuild, wantBuildDate)
+			Expect(app.version).To(Equal(wantVersion))
+			Expect(app.build).To(Equal(wantBuild))
+			Expect(app.buildDate).To(Equal(wantBuildDate))
+		})
+	})
 
-func TestApplication_WithEnvironment(t *testing.T) {
-	wantEnvironment := "environment"
-	app := (&Application{}).WithEnvironment(wantEnvironment)
-	assert.Equal(t, wantEnvironment, app.environment)
-}
+	Describe("WithEnvironment", func() {
+		It("should set the environment", func() {
+			wantEnvironment := "environment"
+			app := (&Application{}).WithEnvironment(wantEnvironment)
+			Expect(app.environment).To(Equal(wantEnvironment))
+		})
+	})
 
-func TestApplication_Shutdown(t *testing.T) {
-	wantShutdownHandler := func() {}
-	app := (&Application{}).Shutdown(wantShutdownHandler)
-	require.Len(t, app.shutdownHandler, 1)
-}
+	Describe("Shutdown", func() {
+		It("should add a shutdown handler", func() {
+			wantShutdownHandler := func() {}
+			app := (&Application{}).Shutdown(wantShutdownHandler)
+			Expect(app.shutdownHandler).To(HaveLen(1))
+		})
 
-func TestApplication(t *testing.T) {
-	t.Run("should start and stop all servers and resources", func(t *testing.T) {
-		ctx, cancelFunc := context.WithCancel(context.Background())
+		When(`processing a long running shutdown function`, func() {
+			It("should wait for all shutdown function complete", func() {
+				ctx, cancelFunc := context.WithCancel(context.Background())
 
-		app := New().WithContext(ctx)
+				shutdownDuration := 500 * time.Millisecond
+				var handlerCompleted bool
 
-		r := &dummyResource{}
+				app := New().
+					WithContext(ctx).
+					WithSkipConfig(true).
+					WithDisableSystemServer(true).
+					Shutdown(func() {
+						time.Sleep(shutdownDuration)
+						handlerCompleted = true
+					})
 
-		go func() {
-			os.Setenv("CONFIG", "./testdata/.config.yaml")
-			os.Setenv("SECRETS", "./testdata/.secrets.yaml")
+				runDone := make(chan struct{})
+				go func() {
+					defer close(runDone)
+					_ = app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+						return []goservices.Service{&dummyResource{}}, nil
+					})
+				}()
 
-			app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
-				h := &httpService{}
-				return []goservices.Service{h, r}, nil
+				Eventually(app.IsRunning).
+					WithTimeout(3 * time.Second).
+					WithPolling(50 * time.Millisecond).
+					Should(BeTrue())
+
+				beforeShutdown := time.Now()
+				cancelFunc() // Shutdown!
+
+				Eventually(runDone).WithTimeout(3 * time.Second).Should(BeClosed())
+
+				Expect(handlerCompleted).To(BeTrue())
+				Expect(time.Since(beforeShutdown)).To(BeNumerically("~", shutdownDuration, time.Millisecond*10))
 			})
-		}()
+		})
 
-		require.Eventually(t, func() bool {
-			_, err := http.Get("http://localhost:8080")
-			return assert.NoError(t, err)
-		}, time.Second*5, time.Second)
+		When(`processing a long running closing service`, func() {
+			It("should wait for all shutdown handlers to complete before finishing", func() {
+				ctx, cancelFunc := context.WithCancel(context.Background())
 
-		require.Eventually(t, func() bool {
-			resp, err := http.Get("http://localhost:8082/healthz")
-			if err != nil {
-				return assert.NoError(t, err)
-			}
-			responseContent, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return assert.NoError(t, err)
-			}
-			fmt.Println(string(responseContent))
-			return true
-		}, time.Second*2, time.Millisecond*100)
+				shutdownDuration := 500 * time.Millisecond
 
-		require.Eventually(t, func() bool {
-			resp, err := http.Get("http://localhost:8082/readyz")
-			if err != nil {
-				return assert.NoError(t, err)
-			}
-			responseContent, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return assert.NoError(t, err)
-			}
-			fmt.Println(string(responseContent))
-			return true
-		}, time.Second*2, time.Millisecond*100)
+				app := New().
+					WithContext(ctx).
+					WithSkipConfig(true).
+					WithDisableSystemServer(true)
 
-		assert.True(t, r.started)
+				srv := &dummyResource{
+					stopDuration: shutdownDuration,
+				}
 
-		time.Sleep(time.Millisecond * 300)
+				runDone := make(chan struct{})
+				go func() {
+					defer close(runDone)
+					_ = app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+						return []goservices.Service{srv}, nil
+					})
+				}()
 
-		cancelFunc()
+				Eventually(app.IsRunning).
+					WithTimeout(3 * time.Second).
+					WithPolling(50 * time.Millisecond).
+					Should(BeTrue())
 
-		require.Eventually(t, func() bool {
-			_, err := http.Get("http://localhost:8080")
-			return assert.Error(t, err)
-		}, time.Second, time.Millisecond*100)
+				beforeShutdown := time.Now()
+				cancelFunc() // Shutdown!
 
-		assert.False(t, r.started)
+				Eventually(runDone).WithTimeout(3 * time.Second).Should(BeClosed())
+
+				Expect(srv.started).To(BeFalse())
+				Expect(time.Since(beforeShutdown)).To(BeNumerically("~", shutdownDuration, time.Millisecond*10))
+			})
+		})
 	})
 
-	t.Run("should not be ready until the Run function finishes", func(t *testing.T) {
-		ctx, cancelFunc := context.WithCancel(context.Background())
+	Describe("Run", func() {
+		It("should start and stop all servers and resources", func() {
+			ctx, cancelFunc := context.WithCancel(context.Background())
 
-		os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
+			os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
 
-		app := New().WithContext(ctx)
+			app := New().WithContext(ctx)
 
-		go func() {
-			r := &dummyResource{
-				startDuration: time.Second,
+			r := &dummyResource{}
+
+			go func() {
+				app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+					h := &httpService{}
+					return []goservices.Service{h, r}, nil
+				})
+			}()
+
+			Eventually(func() error {
+				_, err := http.Get("http://localhost:8080")
+				return err
+			}).WithTimeout(5 * time.Second).WithPolling(time.Second).Should(Succeed())
+
+			Eventually(func() error {
+				resp, err := http.Get("http://localhost:8082/healthz")
+				if err != nil {
+					return err
+				}
+				_, err = io.ReadAll(resp.Body)
+				return err
+			}).WithTimeout(2 * time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
+
+			Eventually(func() error {
+				resp, err := http.Get("http://localhost:8082/readyz")
+				if err != nil {
+					return err
+				}
+				_, err = io.ReadAll(resp.Body)
+				return err
+			}).WithTimeout(2 * time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
+
+			Expect(r.started).To(BeTrue())
+
+			time.Sleep(300 * time.Millisecond)
+
+			cancelFunc()
+
+			Eventually(func() error {
+				_, err := http.Get("http://localhost:8080")
+				if err != nil {
+					return nil
+				}
+				return fmt.Errorf("expected connection to be refused")
+			}).WithTimeout(time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
+
+			Expect(r.started).To(BeFalse())
+		})
+
+		It("should not be ready until the Run function finishes", func() {
+			ctx, cancelFunc := context.WithCancel(context.Background())
+
+			os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
+
+			port := "8089"
+
+			app := New().
+				WithSystemServerBindAddress(":" + port).
+				WithContext(ctx)
+
+			go func() {
+				r := &dummyResource{
+					startDuration: time.Second,
+				}
+				app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+					return []goservices.Service{r}, nil
+				})
+			}()
+
+			Eventually(appIsNotReady(port)).
+				WithTimeout(200*time.Second).
+				WithPolling(100*time.Millisecond).
+				Should(BeTrue(), "should be not ready until all services are started")
+
+			Eventually(healthCheckBecomesReady(port)).
+				WithTimeout(3*time.Second).
+				WithPolling(100*time.Millisecond).
+				Should(BeTrue(), "app should be ready after 2s")
+
+			cancelFunc()
+
+			Eventually(func() error {
+				_, err := http.Get("http://localhost:8089/readyz")
+				if err != nil {
+					return nil
+				}
+				return fmt.Errorf("expected connection to be refused")
+			}).WithTimeout(3 * time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
+		})
+
+		It(`should be ready only when all "ready"ble services are ready`, func() {
+			ctx, cancelFunc := context.WithCancel(context.Background())
+
+			os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
+
+			app := New().WithContext(ctx)
+
+			lgrs := &longToGetReadyService{
+				listenDuration: time.Second * 1,
 			}
-			app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
-				return []goservices.Service{r}, nil
-			},
-			)
-		}()
 
-		// Ensure the system http endpoint is ok and not ready.
-		assert.Eventually(t, appIsNotReady(), time.Second*200, time.Millisecond*100, "should be not ready until all services are started")
+			go func() {
+				app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+					return []goservices.Service{lgrs}, nil
+				})
+			}()
 
-		assert.Eventually(t, healthCheckBecomesReady(), time.Second*3, time.Millisecond*100, "app should be ready after 2s")
+			now := time.Now()
+			Eventually(func() bool {
+				readyz, err := getReadyz()
+				if err != nil {
+					logError("failed to get readyz", err)
+					return false
+				}
+				if c, ok := readyz.Checks[lgrs.Name()]; !ok || c.Error != "" {
+					logError("check not available", c)
+					return false
+				}
+				return true
+			}).WithTimeout(5 * time.Second).WithPolling(500 * time.Millisecond).Should(BeTrue())
+			Expect(time.Since(now)).To(BeNumerically("~", time.Second, time.Second))
 
-		cancelFunc()
+			cancelFunc()
 
-		assert.Eventually(t, func() bool {
-			_, err := http.Get("http://localhost:8082/readyz")
-			return assert.Error(t, err)
-		}, time.Second*3, time.Millisecond*100)
+			Eventually(func() error {
+				_, err := http.Get("http://localhost:8080")
+				if err != nil {
+					return nil
+				}
+				return fmt.Errorf("expected connection to be refused")
+			}).WithTimeout(time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
+		})
+
+		It("should clean and proper finish all services when one of 2 long starting servers fail", func() {
+			Skip("not implemented")
+		})
+
+		It("should clean and properly finish all services when during a long starting server receive a Finish", func() {
+			Skip("not implemented")
+		})
 	})
+})
 
-	t.Run("should be ready only when all readable services are ready", func(t *testing.T) {
-		ctx, cancelFunc := context.WithCancel(context.Background())
-
-		os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
-
-		app := New().WithContext(ctx)
-
-		lgrs := &longToGetReadyService{
-			listenDuration: time.Second * 1,
-		}
-
-		go func() {
-			app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
-				return []goservices.Service{lgrs}, nil
-			},
-			)
-		}()
-
-		now := time.Now()
-		require.Eventually(t, func() bool {
-			readyz, err := getReadyz()
-			if err != nil {
-				logError("failed to get readyz", err)
-				return false
-			}
-			if c, ok := readyz.Checks[lgrs.Name()]; !ok || c.Error != "" {
-				logError("check not available", c)
-				return false
-			}
-			return true
-		}, time.Second*5, time.Millisecond*500)
-		assert.InDelta(t, time.Second*1, time.Since(now), float64(time.Second), "took too long to become ready")
-
-		cancelFunc()
-
-		require.Eventually(t, func() bool {
-			_, err := http.Get("http://localhost:8080")
-			return assert.Error(t, err)
-		}, time.Second, time.Millisecond*100)
-	})
-
-	t.Run("should clean and proper finish all services when one of 2 long starting servers fail", func(t *testing.T) {
-		t.Skip("not implemented")
-	})
-
-	t.Run("should clean and properly finish all services when during a long starting server receive a Finish", func(t *testing.T) {
-		t.Skip("not implemented")
-	})
-}
-
-func getReadyz() (svchealthcheck.CheckResponse, error) {
-	resp, err := http.Get("http://localhost:8082/readyz")
+func getReadyz(port ...string) (svchealthcheck.CheckResponse, error) {
+	p := "8082"
+	if len(port) > 0 {
+		p = port[0]
+	}
+	resp, err := http.Get(fmt.Sprintf("http://localhost:%s/readyz", p))
 	if err != nil {
 		return svchealthcheck.CheckResponse{}, err
 	}
@@ -203,9 +300,9 @@ func getReadyz() (svchealthcheck.CheckResponse, error) {
 	return jsonResp, nil
 }
 
-func appIsNotReady() func() bool {
+func appIsNotReady(port ...string) func() bool {
 	return func() bool {
-		readyz, err := getReadyz()
+		readyz, err := getReadyz(port...)
 		if err != nil {
 			logError("failed getting Readyz", err)
 			return false
@@ -234,9 +331,9 @@ func logError(v ...interface{}) {
 	fmt.Println(v...)
 }
 
-func healthCheckBecomesReady() func() bool {
+func healthCheckBecomesReady(port ...string) func() bool {
 	return func() bool {
-		readyz, err := getReadyz()
+		readyz, err := getReadyz(port...)
 		if err != nil {
 			logError("failed getting Readyz", err)
 			return false

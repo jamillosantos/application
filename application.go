@@ -67,6 +67,8 @@ type Application struct {
 	shutdownHandler            []func()
 	zapConfigModifier          func(*zap.Config)
 	configManagerConfigOptions []config.Option
+	systemServerInitialize     func(*fiberv2.App) error
+	systemServerBindAddress    string
 }
 
 func defaultApplication() *Application {
@@ -80,6 +82,8 @@ func defaultApplication() *Application {
 		configManagerConfigOptions: []config.Option{},
 
 		environment: goenv.GetStringDefault("ENV", "production"),
+
+		systemServerBindAddress: ":8082",
 
 		shutdownHandler: []func(){},
 	}
@@ -101,6 +105,11 @@ func (app *Application) WithName(value string) *Application {
 
 func (app *Application) WithConfigManagerOptions(options ...config.Option) *Application {
 	app.configManagerConfigOptions = append(app.configManagerConfigOptions, options...)
+	return app
+}
+
+func (app *Application) WithSystemServerBindAddress(value string) *Application {
+	app.systemServerBindAddress = value
 	return app
 }
 
@@ -218,6 +227,14 @@ func (app *Application) run(setup ServiceSetup) error {
 			logger.Error("error stopping the services", zap.Error(err))
 		}
 
+		app.shutdownHandlerMutex.Lock()
+		handlers := make([]func(), len(app.shutdownHandler))
+		copy(handlers, app.shutdownHandler)
+		app.shutdownHandlerMutex.Unlock()
+		for _, h := range handlers {
+			h()
+		}
+
 		_ = logger.Sync()
 	}()
 
@@ -296,10 +313,15 @@ func findSettingsIfEmpty(bi *debug.BuildInfo, key, value, value2, defaultValue s
 
 // buildSystemServer initializes the server for metrics.
 func (app *Application) buildSystemServer(hc *svchealthcheck.Healthcheck) *srvfiber.FiberServer {
-	return srvfiber.NewFiberServer(func(app *fiberv2.App) error {
-		hcfiber.FiberInitialize(hc, app)
+	return srvfiber.NewFiberServer(func(fiberApp *fiberv2.App) error {
+		hcfiber.FiberInitialize(hc, fiberApp)
+
+		if app.systemServerInitialize != nil {
+			return app.systemServerInitialize(fiberApp)
+		}
+
 		return nil
-	}, srvfiber.WithName("metrics/health/live"), srvfiber.WithBindAddress(":8082"))
+	}, srvfiber.WithName("metrics/health/live"), srvfiber.WithBindAddress(app.systemServerBindAddress))
 }
 
 // runSystemServer starts the server for metrics, health and ready checks. If the disableSystemServer flag is set,

@@ -9,7 +9,7 @@ lint:
 
 .PHONY: test
 test: lint
-	go test ./...
+	go tool ginkgo ./...
 
 .PHONY: all
 all: lint test
