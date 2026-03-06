@@ -63,9 +63,10 @@ type Application struct {
 	ConfigManager *config.Manager
 	Runner        *goservices.Runner
 
-	shutdownHandlerMutex sync.Mutex
-	shutdownHandler      []func()
-	zapConfigModifier    func(*zap.Config)
+	shutdownHandlerMutex       sync.Mutex
+	shutdownHandler            []func()
+	zapConfigModifier          func(*zap.Config)
+	configManagerConfigOptions []config.Option
 }
 
 func defaultApplication() *Application {
@@ -75,6 +76,8 @@ func defaultApplication() *Application {
 		version:   Version,
 		build:     Build,
 		buildDate: BuildDate,
+
+		configManagerConfigOptions: []config.Option{},
 
 		environment: goenv.GetStringDefault("ENV", "production"),
 
@@ -93,6 +96,11 @@ func (app *Application) WithContext(ctx context.Context) *Application {
 
 func (app *Application) WithName(value string) *Application {
 	app.name = value
+	return app
+}
+
+func (app *Application) WithConfigManagerOptions(options ...config.Option) *Application {
+	app.configManagerConfigOptions = append(app.configManagerConfigOptions, options...)
 	return app
 }
 
@@ -219,31 +227,9 @@ func (app *Application) run(setup ServiceSetup) error {
 	}
 
 	if !app.skipConfig {
-		// Initializes and load the plain configuration
-		plainConfigLoader := config.NewFileLoader(goenv.GetStringDefault("CONFIG", ".config.yaml"))
-		plainEngine := config.NewYAMLEngine(plainConfigLoader)
-		err = plainEngine.Load()
-		if err != nil {
-			logger.Error("could not initialize the plain engine", zap.Error(err))
-			return err
-		}
-
-		// Initializes tand load the secret configuration
-		secretConfigLoader := config.NewFileLoader(goenv.GetStringDefault("SECRETS", ".secrets.yaml"))
-		secretEngine := config.NewYAMLEngine(secretConfigLoader)
-		err = secretEngine.Load()
-		if err != nil {
-			logger.Error("could not initialize the secret engine", zap.Error(err))
-			return err
-		}
-
-		configManager := config.NewManager()
-		configManager.AddPlainEngine(plainEngine)
-		configManager.AddSecretEngine(secretEngine)
-
-		// Publish the config manager to be used into the setup callback
-		app.ConfigManager = configManager
-
+		app.ConfigManager = config.NewManager(
+			app.configManagerConfigOptions...,
+		)
 	}
 
 	svcs, err := setup(ctx, app)
