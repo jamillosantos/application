@@ -15,6 +15,12 @@ func (app *Application) IsRunning() bool {
 	return app.state == stateRunning
 }
 
+func (app *Application) IsStopped() bool {
+	app.stateM.Lock()
+	defer app.stateM.Unlock()
+	return app.state == stateStopped
+}
+
 func (app *Application) IsReady() bool {
 	GinkgoHelper()
 

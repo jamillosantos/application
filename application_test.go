@@ -62,13 +62,15 @@ var _ = Describe("Application", func() {
 						time.Sleep(shutdownDuration)
 						handlerCompleted = true
 					})
+				defer waitUntilNotRunning(app)
 
 				runDone := make(chan struct{})
 				go func() {
+					defer GinkgoRecover()
 					defer close(runDone)
-					_ = app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+					Expect(app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
 						return []goservices.Service{&dummyResource{}}, nil
-					})
+					})).NotTo(HaveOccurred())
 				}()
 
 				Eventually(app.IsRunning).
@@ -98,6 +100,7 @@ var _ = Describe("Application", func() {
 					WithContext(ctx).
 					WithSkipConfig(true).
 					WithDisableSystemServer(true)
+				defer waitUntilNotRunning(app)
 
 				srv := &dummyResource{
 					stopDuration: shutdownDuration,
@@ -105,10 +108,11 @@ var _ = Describe("Application", func() {
 
 				runDone := make(chan struct{})
 				go func() {
+					defer GinkgoRecover()
 					defer close(runDone)
-					_ = app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+					Expect(app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
 						return []goservices.Service{srv}, nil
-					})
+					})).NotTo(HaveOccurred())
 				}()
 
 				Eventually(app.IsRunning).
@@ -143,13 +147,15 @@ var _ = Describe("Application", func() {
 						time.Sleep(handlerDuration)
 						handlerCompleted = true
 					})
+				defer waitUntilNotRunning(app)
 
 				runDone := make(chan struct{})
 				go func() {
+					defer GinkgoRecover()
 					defer close(runDone)
-					_ = app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+					Expect(app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
 						return []goservices.Service{&dummyResource{}}, nil
-					})
+					})).NotTo(HaveOccurred())
 				}()
 
 				Eventually(app.IsRunning).
@@ -184,15 +190,17 @@ var _ = Describe("Application", func() {
 						// This should not be called because the service won't finish on time.
 						handlerCompleted = true
 					})
+				defer waitUntilNotRunning(app)
 
 				runDone := make(chan struct{})
 				go func() {
+					defer GinkgoRecover()
 					defer close(runDone)
-					_ = app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+					Expect(app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
 						return []goservices.Service{&dummyResource{
 							stopDuration: handlerDuration,
 						}}, nil
-					})
+					})).NotTo(HaveOccurred())
 				}()
 
 				Eventually(app.IsRunning).
@@ -211,49 +219,92 @@ var _ = Describe("Application", func() {
 		})
 	})
 
+	Describe("system server", func() {
+		var (
+			cancelFunc context.CancelFunc
+			app        *Application
+		)
+
+		BeforeEach(func() {
+			var ctx context.Context
+			ctx, cancelFunc = context.WithCancel(context.Background())
+
+			app = New().
+				WithContext(ctx).
+				WithSkipConfig(true)
+
+			go func() {
+				defer GinkgoRecover()
+				Expect(app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+					return []goservices.Service{&dummyResource{}}, nil
+				})).NotTo(HaveOccurred())
+			}()
+
+			Eventually(app.IsReady).
+				WithTimeout(3 * time.Second).
+				WithPolling(1 * time.Millisecond).
+				Should(BeTrue())
+		})
+
+		AfterEach(func() {
+			cancelFunc()
+			waitUntilNotRunning(app)
+		})
+
+		Describe("/metrics", func() {
+			It("should return 200 OK", func() {
+				resp, err := http.Get("http://localhost:8082/metrics")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			})
+
+			It("should return prometheus text format", func() {
+				resp, err := http.Get("http://localhost:8082/metrics")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/plain"))
+			})
+
+			It("should expose go runtime metrics", func() {
+				resp, err := http.Get("http://localhost:8082/metrics")
+				Expect(err).ToNot(HaveOccurred())
+				body, err := io.ReadAll(resp.Body)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(string(body)).To(ContainSubstring("go_goroutines"))
+			})
+		})
+	})
+
 	Describe("Run", func() {
 		It("should start and stop all servers and resources", func() {
 			ctx, cancelFunc := context.WithCancel(context.Background())
 
-			os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
+			Expect(
+				os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`),
+			).To(Succeed())
 
 			app := New().WithContext(ctx)
+			defer waitUntilNotRunning(app)
+			defer cancelFunc()
 
 			r := &dummyResource{}
+			h := &httpService{}
 
 			go func() {
-				app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
-					h := &httpService{}
-					return []goservices.Service{h, r}, nil
-				})
+				defer GinkgoRecover()
+				Expect(
+					app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+						return []goservices.Service{h, r}, nil
+					}),
+				).ToNot(HaveOccurred())
 			}()
 
-			Eventually(func() error {
-				_, err := http.Get("http://localhost:8080")
-				return err
-			}).WithTimeout(5 * time.Second).WithPolling(time.Second).Should(Succeed())
-
-			Eventually(func() error {
-				resp, err := http.Get("http://localhost:8082/healthz")
-				if err != nil {
-					return err
-				}
-				_, err = io.ReadAll(resp.Body)
-				return err
-			}).WithTimeout(2 * time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
-
-			Eventually(func() error {
-				resp, err := http.Get("http://localhost:8082/readyz")
-				if err != nil {
-					return err
-				}
-				_, err = io.ReadAll(resp.Body)
-				return err
-			}).WithTimeout(2 * time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
+			By("waiting the app to become ready")
+			Eventually(app.IsReady).
+				WithTimeout(5 * time.Second).
+				WithPolling(time.Second).
+				Should(BeTrue())
 
 			Expect(r.started).To(BeTrue())
-
-			time.Sleep(300 * time.Millisecond)
 
 			cancelFunc()
 
@@ -263,7 +314,10 @@ var _ = Describe("Application", func() {
 					return nil
 				}
 				return fmt.Errorf("expected connection to be refused")
-			}).WithTimeout(time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
+			}).
+				WithTimeout(time.Second).
+				WithPolling(100 * time.Millisecond).
+				Should(Succeed())
 
 			Expect(r.started).To(BeFalse())
 		})
@@ -271,18 +325,22 @@ var _ = Describe("Application", func() {
 		It("should not be ready until the Run function finishes", func() {
 			ctx, cancelFunc := context.WithCancel(context.Background())
 
-			os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
+			Expect(
+				os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`),
+			).To(Succeed())
 
 			app := New().
 				WithContext(ctx)
+			defer waitUntilNotRunning(app)
 			defer cancelFunc()
 
 			go func() {
-				app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+				defer GinkgoRecover()
+				Expect(app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
 					return []goservices.Service{&dummyResource{
 						startDuration: time.Second,
 					}}, nil
-				})
+				})).NotTo(HaveOccurred())
 			}()
 
 			now := time.Now()
@@ -301,12 +359,17 @@ var _ = Describe("Application", func() {
 			ctx, cancelFunc := context.WithCancel(context.Background())
 			defer cancelFunc()
 
-			os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`)
+			Expect(
+				os.Setenv("CONFIG_LOAD_OPTIONS", `{"plain":["yamlfile:./testdata/.config.yaml","secrets":[yamlfile:./testdata/.secrets.yaml]}`),
+			).To(Succeed())
 
 			app := New().WithContext(ctx)
+			defer waitUntilNotRunning(app)
+			defer cancelFunc()
 
 			go func() {
-				app.Run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
+				defer GinkgoRecover()
+				Expect(app.run(func(ctx context.Context, app *Application) ([]goservices.Service, error) {
 					return []goservices.Service{
 						&longToGetReadyService{
 							listenDuration: 10 * time.Millisecond,
@@ -321,7 +384,7 @@ var _ = Describe("Application", func() {
 							listenDuration: 200 * time.Millisecond,
 						},
 					}, nil
-				})
+				})).NotTo(HaveOccurred())
 			}()
 
 			now := time.Now()
@@ -344,3 +407,11 @@ var _ = Describe("Application", func() {
 		})
 	})
 })
+
+func waitUntilNotRunning(app *Application) {
+	GinkgoHelper()
+	Eventually(app.IsStopped).
+		WithTimeout(3 * time.Second).
+		WithPolling(time.Millisecond).
+		Should(BeTrue())
+}
