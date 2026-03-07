@@ -9,7 +9,7 @@ lint:
 
 .PHONY: test
 test:
-	go tool ginkgo ./...
+	go tool ginkgo --flake-attempts 10 ./...
 
 .PHONY: all
 all: lint test

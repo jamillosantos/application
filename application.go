@@ -11,14 +11,16 @@ import (
 	"syscall"
 	"time"
 
-	fiberv2 "github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/jamillosantos/config"
 	goenv "github.com/jamillosantos/go-env"
 	goservices "github.com/jamillosantos/go-services"
 	"github.com/jamillosantos/logctx"
-	srvfiber "github.com/jamillosantos/server-fiber"
+	srvfiber "github.com/jamillosantos/server-fiber/v2"
 	svchealthcheck "github.com/jamillosantos/services-healthcheck"
-	"github.com/jamillosantos/services-healthcheck/hcfiber"
+	"github.com/jamillosantos/services-healthcheck/hcfiberv3"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
@@ -37,7 +39,9 @@ var (
 type appState string
 
 const (
-	stateRunning appState = "running"
+	stateRunning      appState = "running"
+	stateShuttingDown appState = "shutting_down"
+	stateStopped      appState = "stopped"
 )
 
 // ServiceSetup is the handler that is pased to the Application.Run receiver.
@@ -69,7 +73,7 @@ type Application struct {
 	shutdownGracePeriod        time.Duration
 	zapConfigModifier          func(*zap.Config)
 	configManagerConfigOptions []config.Option
-	systemServerInitialize     func(*fiberv2.App) error
+	systemServerInitialize     func(*fiber.App) error
 	systemServerBindAddress    string
 }
 
@@ -281,6 +285,10 @@ func (app *Application) run(setup ServiceSetup) error {
 			logger.Warn("shutdown grace period exceeded, forcing exit")
 		}
 
+		app.stateM.Lock()
+		app.state = stateStopped
+		app.stateM.Unlock()
+
 		_ = logger.Sync()
 	}()
 
@@ -317,6 +325,10 @@ func (app *Application) run(setup ServiceSetup) error {
 	app.stateM.Unlock()
 
 	<-ctx.Done()
+
+	app.stateM.Lock()
+	app.state = stateShuttingDown
+	app.stateM.Unlock()
 
 	return nil
 }
@@ -359,8 +371,14 @@ func findSettingsIfEmpty(bi *debug.BuildInfo, key, value, value2, defaultValue s
 
 // buildSystemServer initializes the server for metrics.
 func (app *Application) buildSystemServer(hc *svchealthcheck.Healthcheck) *srvfiber.FiberServer {
-	return srvfiber.NewFiberServer(func(fiberApp *fiberv2.App) error {
-		hcfiber.FiberInitialize(hc, fiberApp)
+	return srvfiber.NewFiberServer(func(fiberApp *fiber.App) error {
+		hcfiberv3.FiberInitialize(hc, fiberApp)
+
+		// TODO(J): Add options to customize the gatherer and registerer.
+		fiberApp.Get("/metrics", metricsEndpoint(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+			Registry:           prometheus.DefaultRegisterer,
+			DisableCompression: true,
+		}))
 
 		if app.systemServerInitialize != nil {
 			return app.systemServerInitialize(fiberApp)
