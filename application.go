@@ -1,3 +1,18 @@
+// Package application provides an opinionated bootstrap framework for Go services.
+// It wires together structured logging (zap), config management, service lifecycle
+// management (go-services), health/readiness checks, Prometheus metrics, and a
+// system HTTP server — so callers only need to implement their own services and
+// hand them to Run via a ServiceSetup function.
+//
+// Typical usage:
+//
+//	func main() {
+//	    application.New().
+//	        WithName("my-service").
+//	        Run(func(ctx context.Context, app *application.Application) ([]goservices.Service, error) {
+//	            return []goservices.Service{myService}, nil
+//	        })
+//	}
 package application
 
 import (
@@ -44,9 +59,18 @@ const (
 	stateStopped      appState = "stopped"
 )
 
-// ServiceSetup is the handler that is pased to the Application.Run receiver.
+// ServiceSetup is the function passed to Application.Run. It receives the
+// application context and the Application instance, and must return the list of
+// services to be managed by the runner. Returning an error aborts startup.
 type ServiceSetup func(ctx context.Context, app *Application) ([]goservices.Service, error)
 
+// Application is the central bootstrap object. Build one with New(), configure
+// it with the With* methods, and start it with Run. The zero value is not
+// usable; always use New().
+//
+// The two exported fields, ConfigManager and Runner, are populated by Run
+// before the ServiceSetup callback is invoked, so they are safe to use inside
+// that callback.
 type Application struct {
 	context context.Context
 
@@ -103,25 +127,36 @@ func defaultApplication() *Application {
 	}
 }
 
+// New creates an Application with sensible defaults: production environment,
+// system server on :8082, and a 30-second shutdown grace period.
 func New() *Application {
 	return defaultApplication()
 }
 
+// WithContext sets the base context for the application. The context is wrapped
+// with signal handling (SIGINT/SIGTERM) inside Run. Defaults to
+// context.Background().
 func (app *Application) WithContext(ctx context.Context) *Application {
 	app.context = ctx
 	return app
 }
 
+// WithName sets the application name that is included in every log entry.
+// If not set, the name is derived from the module path in the binary's build info.
 func (app *Application) WithName(value string) *Application {
 	app.name = value
 	return app
 }
 
+// WithConfigManagerOptions appends options forwarded to config.NewManager when
+// the application starts. Has no effect when WithSkipConfig(true) is set.
 func (app *Application) WithConfigManagerOptions(options ...config.Option) *Application {
 	app.configManagerConfigOptions = append(app.configManagerConfigOptions, options...)
 	return app
 }
 
+// WithSystemServerBindAddress overrides the bind address of the system HTTP
+// server (health, readiness, and metrics). Defaults to ":8082".
 func (app *Application) WithSystemServerBindAddress(value string) *Application {
 	app.systemServerBindAddress = value
 	return app
@@ -134,21 +169,32 @@ func (app *Application) WithVersion(version, build, buildDate string) *Applicati
 	return app
 }
 
+// WithLoggerZapOptions sets additional zap.Option values applied when building
+// the logger, for example to attach extra cores or hooks.
 func (app *Application) WithLoggerZapOptions(options ...zap.Option) *Application {
 	app.loggerZapOptions = options
 	return app
 }
 
+// WithZapConfigModifier registers a callback that receives the zap.Config
+// before the logger is built, allowing fine-grained customisation (e.g.
+// changing the log level or encoder).
 func (app *Application) WithZapConfigModifier(f func(*zap.Config)) *Application {
 	app.zapConfigModifier = f
 	return app
 }
 
+// WithEnvironment sets the deployment environment name. The value "dev" selects
+// a development logger; any other value uses the production logger. Defaults to
+// the ENV environment variable, falling back to "production".
 func (app *Application) WithEnvironment(environment string) *Application {
 	app.environment = environment
 	return app
 }
 
+// WithDisableSystemServer controls whether the system HTTP server (health,
+// readiness, and metrics endpoints) is started. Useful in tests or CLI tools
+// that do not need an HTTP listener.
 func (app *Application) WithDisableSystemServer(disable bool) *Application {
 	app.disableSystemServer = disable
 	return app
@@ -160,6 +206,10 @@ func (app *Application) WithSkipConfig(skip bool) *Application {
 	return app
 }
 
+// Shutdown registers a function to be called during graceful shutdown, after
+// all services have been stopped. Multiple handlers are called sequentially in
+// registration order. Each handler must respect the shutdown grace period; if
+// the period elapses the remaining handlers are skipped.
 func (app *Application) Shutdown(handler func()) *Application {
 	app.shutdownHandlerMutex.Lock()
 	app.shutdownHandler = append(app.shutdownHandler, handler)
@@ -174,6 +224,12 @@ func (app *Application) WithShutdownGracePeriod(d time.Duration) *Application {
 	return app
 }
 
+// Run starts the application with the given ServiceSetup and blocks until the
+// process receives SIGINT or SIGTERM, or until the context passed to
+// WithContext is cancelled. If startup fails, it calls os.Exit(1).
+//
+// For programmatic control over the error (e.g. in tests) use the unexported
+// run method instead.
 func (app *Application) Run(setup ServiceSetup) {
 	err := app.run(setup)
 	if err != nil {

@@ -1,3 +1,5 @@
+// Package zapreporter provides a goservices.Reporter implementation that logs
+// service lifecycle events using a zap.Logger.
 package zapreporter
 
 import (
@@ -14,10 +16,13 @@ const (
 	loggingFieldOSSignal          = "os.signal"
 )
 
+// ZapReporter is a goservices.Reporter that emits structured log lines for
+// every service lifecycle event (start, stop, retry, signal).
 type ZapReporter struct {
 	logger *zap.Logger
 }
 
+// New creates a ZapReporter backed by the given logger.
 func New(logger *zap.Logger) *ZapReporter {
 	return &ZapReporter{logger}
 }
